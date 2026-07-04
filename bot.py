@@ -1,4 +1,5 @@
 import os
+import logging
 import asyncio
 from datetime import datetime, timezone, timedelta, date
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -8,6 +9,19 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from google import genai
 from google.genai import types
 from sqlalchemy import create_engine, text
+
+# configuracion de logging 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.FileHandler("bot.log", encoding="utf-8"), # guardamos todo en este archivo
+        logging.StreamHandler() #lo muestra en consola
+    ]
+)
+# cargamos las variables
+load_dotenv()
 
 # Vamos a cargar las variables del entorno
 load_dotenv()
@@ -71,7 +85,7 @@ async def procesar_gasto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raise ValueError("Gemini devolvio una respuesta vacia")
         
         ia_result = ia_result.strip()  # Limpiamos espacios al inicio y final
-        print(f"🤖IA decodifico: {ia_result}") # Vemos en la consola que proceso
+        logging.info(f"🤖IA decodifico: {ia_result}") # Vemos en la consola que proceso
 
         # Separamos el texto usando barras
         parts = [p.strip() for p in ia_result.split("|")]
@@ -113,7 +127,7 @@ async def procesar_gasto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(mensaje_ok, parse_mode="Markdown")
     
     except Exception as e:
-        print(f"❌ Error general: {e}")
+        logging.error(f"❌ Error general: {e}", exc_info=True)
         await update.message.reply_text(
             "😅 Che, no entendí bien el movimiento o hubo un problema al guardarlo."
             "¿Me lo podrás repetir de otra forma? Ej: 'Gasto 3000 en verdulería'"
@@ -161,7 +175,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(reporte, parse_mode="Markdown")
 
     except Exception as e:
-        print(f"❌ Error al generar balance: {e}")
+        logging.error(f"❌ Error al generar balance: {e}", exc_info=True)
         await update.message.reply_text(
             "💥 Hubo un error al conectar con la base de datos para generar tu reporte."
         )
@@ -226,7 +240,7 @@ async def categorias(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(reporte, parse_mode="Markdown")
     
     except Exception as e:
-        print(f"❌ Error al generar reporte por categorías: {e}")
+        logging.error(f"❌ Error al generar reporte por categorías: {e}", exc_info=True)
         await update.message.reply_text("💥 Error al conectar con la base de datos para clasificar tus gastos.")
 
 async def deshacer_comando(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -273,7 +287,7 @@ async def deshacer_comando(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     except Exception as e:
-        print(f"Error en comando /deshacer: {e}")
+        logging.error(f"Error en comando /deshacer: {e}", exc_info=True)
         await update.message.reply_text("⚠️ Ocurrió un error al intentar borrar el último registro.")
 
 #Funcion para envias resumenes automaticos
@@ -320,18 +334,18 @@ async def enviar_resumen_automatico(bot, chat_id, tipo_reporte="semanal"):
 
         #Enviamos el mensaje de forma PROACTIVA (osea sin que el usuario lo pida)
         await bot.send_message(chat_id=chat_id, text=reporte, parse_mode="Markdown")
-        print(f"🚀 Reporte automático ({tipo_reporte}) enviado con éxito al ID {chat_id}")
+        logging.info(f"🚀 Reporte automático ({tipo_reporte}) enviado con éxito al ID {chat_id}")
     
     except Exception as e:
-        print(f"❌ Error al enviar reporte automático {tipo_reporte}: {e}")
+        logging.error(f"❌ Error al enviar reporte automático {tipo_reporte}: {e}", exc_info=True)
 
 # funcion principal que arrancamos el bot
 async def main():
     if not all([TELEGRAM_TOKEN, DATABASE_URL, GEMINI_API_KEY]):
-        print("❌ Error: Faltan variables de entorno en el archivo .env")
+        logging.error("❌ Error: Faltan variables de entorno en el archivo .env")
         return
     
-    print("🚀 Arrancando el bot de finanzas ... Presiona Ctrl+C para detenerlo")
+    logging.info("🚀 Arrancando el bot de finanzas ... Presiona Ctrl+C para detenerlo")
 
     # Contruimos la aplicacion de telegram
     app = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -387,7 +401,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n🛑 Bot detenido de forma segura por el usuario. ¡Hasta luego!")
+        logging.info("\n🛑 Bot detenido de forma segura por el usuario. ¡Hasta luego!")
         
         
 

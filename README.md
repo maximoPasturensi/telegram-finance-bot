@@ -245,12 +245,12 @@ python bot.py
 ## 🗺️ Roadmap / Próximos pasos
 
 - [ ] **Multi-usuario dinámico:** reemplazar el `chat_id` hardcodeado en `main()` por una tabla `usuarios` con suscripción opt-in a reportes automáticos.
-- [] **Edición y borrado de movimientos:** comando `/deshacer` para revertir el último registro cargado por error.
+- [x] **Edición y borrado de movimientos:** comando `/deshacer` para revertir el último registro cargado por error.
 - [ ] **Presupuestos por categoría:** alertas proactivas cuando un usuario supera un límite mensual definido.
 - [ ] **Soporte multi-moneda:** normalización de montos para usuarios fuera de Argentina.
 - [ ] **Tests automatizados:** cobertura con `pytest` para el parser de Gemini y las queries SQL (actualmente solo existe `test_db.py` como *smoke test* manual).
 - [ ] **CI/CD:** pipeline de despliegue continuo (GitHub Actions) hacia un entorno productivo (Railway / Render / Fly.io).
-- [ ] **Logging estructurado:** reemplazar los `print()` por `logging` con niveles y rotación de archivos.
+- [x] **Logging estructurado:** reemplazar los `print()` por `logging` con niveles y rotación de archivos.
 - [ ] **Migraciones versionadas:** introducir Alembic para el control de esquema de la tabla `movimientos`.
 
 ---
