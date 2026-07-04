@@ -229,6 +229,53 @@ async def categorias(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"❌ Error al generar reporte por categorías: {e}")
         await update.message.reply_text("💥 Error al conectar con la base de datos para clasificar tus gastos.")
 
+async def deshacer_comando(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    # nos aseguramos d el id del usuario
+    parametros_usuario = [{"user_id": int(user_id)}]
+
+    # 1 query para buscar el ultimo movimiento de este usuario especifico
+    query_buscar = text("""
+        SELECT id, concepto, monto, tipo
+        FROM movimientos
+        WHERE user_id = :user_id
+        ORDER BY created_at DESC
+        LIMIT 1
+    """)
+
+    try:
+        with engine.connect() as connection:
+            result = connection.execute(query_buscar, parametros_usuario).fetchone()
+
+            # Aca si el usuario no tiene movimientos
+            if not result:
+                await update.message.reply_text("❌ No encontré ningún movimiento reciente para deshacer.")
+                return
+            
+            # Si lo encuentra, extraemos los datos al usuario
+            id_registro, concepto, monto, tipo = result
+
+            # query para elminar el registro unico por su ID
+            parametros_eliminar = [{"id": int(id_registro)}]
+            query_eliminar = text("DELETE FROM movimientos WHERE id = :id")
+
+            connection.execute(query_eliminar, parametros_eliminar)
+            connection.commit()
+
+            #Mensaje de confirmacion
+            await update.message.reply_text(
+                f"🗑️ *¡Movimiento eliminado con éxito!*\n\n"
+                f"🔹 *Concepto:* {concepto}\n"
+                f"🔹 *Monto:* ${monto:.2f}\n"
+                f"🔹 *Tipo:* {tipo.capitalize()}",
+                parse_mode="Markdown"
+            )
+
+    except Exception as e:
+        print(f"Error en comando /deshacer: {e}")
+        await update.message.reply_text("⚠️ Ocurrió un error al intentar borrar el último registro.")
+
 #Funcion para envias resumenes automaticos
 async def enviar_resumen_automatico(bot, chat_id, tipo_reporte="semanal"):
     #definimos los filtros segun el tipo de reporte en sql
@@ -293,6 +340,7 @@ async def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("balance", balance)) # handler del balance
     app.add_handler(CommandHandler("categorias", categorias)) # handler de categorias
+    app.add_handler(CommandHandler("deshacer", deshacer_comando)) # handler de deshacer
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_gasto))
 
     # Configuramos tareas automaticas
