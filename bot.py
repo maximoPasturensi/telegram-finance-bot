@@ -299,7 +299,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = text("""
         SELECT tipo, SUM(monto) as total
         FROM movimientos
-        WHERE user_id = :user_id
+        WHERE chat_id = :user_id
         GROUP BY tipo
     """)
 
@@ -501,7 +501,7 @@ async def main():
     #lineas de prueba
     logging.info(f"🔍 Probando Token en Render: '{TELEGRAM_TOKEN[:10]}...'")
     logging.info(f"🔍 Probando URL DB en Render: '{DATABASE_URL[:15]}...'")
-    
+
     if not all([TELEGRAM_TOKEN, DATABASE_URL, GEMINI_API_KEY]):
         logging.error("❌ Error: Faltan variables de entorno en el archivo .env")
         return
