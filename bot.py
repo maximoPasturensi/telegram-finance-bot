@@ -1,6 +1,9 @@
 import os
 import logging
+import threading
 import asyncio
+from http.server import SimpleHTTPRequestHandler
+from socketserver import TCPServer
 from datetime import datetime, timezone, timedelta, date
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
@@ -10,6 +13,20 @@ from google import genai
 from google.genai import types
 from sqlalchemy import create_engine, text
 from pydantic import BaseModel, Field
+
+# funcion para "levantar un servidor basico"
+def run_dummy_server():
+    # render nos da el entorno PORT
+    port = int(os.environ.get("PORT", 8080))
+
+    # creamos un handler para que el server use mi logging y no ensucie la pantalla
+    class LoggedHandler(SimpleHTTPRequestHandler):
+        def log_message(self, format, *args):
+            logging.info(f"[Render HTTP Ping] {format % args}")
+
+    with TCPServer(("", port), LoggedHandler) as httpd:
+        logging.info(f"Servidor de escape para render escuchando en el puerto {port}...")
+        httpd.serve_forever()
 
 class GastoEstructurado(BaseModel):
     monto: float
@@ -527,12 +544,15 @@ async def main():
     #El reloj de fondo
     scheduler.start()
 
-        # Empezamos el motodo de polling (escucha de mensajes)
+    # levantamos el servidor falso
+    threading.Thread(target=run_dummy_server, daemon=True).start()
+
+     # Empezamos el motodo de polling (escucha de mensajes)
     await app.initialize()
     await app.updater.start_polling()
     await app.start()
 
-        # Aca mantenemos el bot corriendo
+    # Aca mantenemos el bot corriendo
     import asyncio
     while True:
         await asyncio.sleep(3600)
