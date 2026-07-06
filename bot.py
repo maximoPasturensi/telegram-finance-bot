@@ -511,7 +511,11 @@ async def main():
         logging.error("❌ Error: Faltan variables de entorno en el archivo .env")
         return
     
+    # lanzamos el servidor web
+    logging.info("⏳ Iniciando servidor web en segundo plano...")
     logging.info("🚀 Arrancando el bot de finanzas ... Presiona Ctrl+C para detenerlo")
+    server_thread = threading.Thread(target=run_dummy_server, daemon=True)
+    server_thread.start()
 
     # Contruimos la aplicacion de telegram
     app = Application.builder().token(TELEGRAM_TOKEN).build()
