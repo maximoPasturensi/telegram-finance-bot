@@ -249,7 +249,7 @@ python bot.py
 - [x] **Presupuestos por categoría:** alertas proactivas cuando un usuario supera un límite mensual definido.
 - [x] **Soporte multi-moneda:** normalización de montos para usuarios fuera de Argentina.
 - [ ] **Tests automatizados:** cobertura con `pytest` para el parser de Gemini y las queries SQL (actualmente solo existe `test_db.py` como *smoke test* manual).
-- [ ] **CI/CD:** pipeline de despliegue continuo (GitHub Actions) hacia un entorno productivo (Railway / Render / Fly.io).
+- [x] **CI/CD:** pipeline de despliegue continuo (GitHub Actions) hacia un entorno productivo (Railway / Render / Fly.io).
 - [x] **Logging estructurado:** reemplazar los `print()` por `logging` con niveles y rotación de archivos.
 - [ ] **Migraciones versionadas:** introducir Alembic para el control de esquema de la tabla `movimientos`.
 

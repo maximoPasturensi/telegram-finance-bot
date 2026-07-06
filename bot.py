@@ -24,9 +24,14 @@ def run_dummy_server():
         def log_message(self, format, *args):
             logging.info(f"[Render HTTP Ping] {format % args}")
 
-    with TCPServer(("", port), LoggedHandler) as httpd:
-        logging.info(f"Servidor de escape para render escuchando en el puerto {port}...")
-        httpd.serve_forever()
+    try:
+        with TCPServer(("", port), LoggedHandler) as httpd:
+            httpd.timeout = 5
+            logging.info(f"Servidor de escape para render escuchando en el puerto {port}...")
+            httpd.serve_forever()
+
+    except Exception as e:
+        logging.error(f"❌ Error en el servidor web ficticio: {e}")
 
 class GastoEstructurado(BaseModel):
     monto: float
