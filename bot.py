@@ -9,6 +9,14 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from google import genai
 from google.genai import types
 from sqlalchemy import create_engine, text
+from pydantic import BaseModel, Field
+
+class GastoEstructurado(BaseModel):
+    monto: float
+    concepto: str
+    categoria: str
+    tipo: str = Field(description="'gasto' o 'ingreso'")
+    moneda: str = Field(description="Codigo ISO 4217 (ej: ARS, USD, EUR). Por defecto ARS.")
 
 # configuracion de logging 
 logging.basicConfig(
@@ -36,19 +44,46 @@ ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 # Comando /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    mensaje = (
-        "👋 ¡Hola! Soy tu asistente de finanzas personales.\n\n"
-        "Anota tus gastos o ingresos de forma natural. Por ejemplo:\n"
-        "✍️ *Gasté 4500 en almuerzo* o *Cobré 80000 de sueldo*\n\n"
-        "Yo me encargo de procesarlo y guardarlo en tu base de datos."
-    )
-    await update.message.reply_text(mensaje, parse_mode="Markdown")
+    """Da la bienvenida al usuario y lo registra en Supabase si es nuevo."""
+    chat_id = update.effective_user.id
+    username = update.effective_user.username
+    first_name = update.effective_user.first_name
 
+    logging.info (f"👤 Usuario ejecutando /start: {first_name} ({chat_id})")
+
+    # guardamos parametros 
+    parametros_usuario = [{"chat_id": int(chat_id), "username": username, "first_name": first_name}]
+
+    #query sql para insertar o no hacer nada
+    query_registrar = text("""
+        INSERT INTO usuarios (chat_id, username, first_name)
+        VALUES (:chat_id, :username, :first_name) 
+        ON CONFLICT (chat_id) DO NOTHING;               
+    """)
+
+    try:
+         #abrimos la conexcion
+         with engine.connect() as connection:
+             connection.execute(query_registrar, parametros_usuario)
+             connection.commit()
+
+         mensaje_bienvenida = (
+            f"¡Hola, {first_name}! 👋\n\n"
+            "Bienvenido a tu bot de finanzas personales.\n"
+            "A partir de ahora, todo lo que anotes acá se guardará en tu cuenta privada.\n\n"
+            "✍️ **¿Cómo anotar un gasto?**\n"
+            "Simplemente escribí algo como: `gaste 1500 en almuerzo` o `pagué 5000 de internet`."
+        )
+         await update.message.reply_text(mensaje_bienvenida, parse_mode="Markdown")
+
+    except Exception as e:
+        logging.error(f"❌ Error al registrar usuario en /start: {e}", exc_info=True)
+        await update.message.reply_text("⚠️ Hubo un problema al iniciar tu cuenta. Por favor, intentá de nuevo más tarde.")
 
 # Procesamos el mensaje con IA
 async def procesar_gasto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    user_id = update.message.from_user.id
+    user_id = update.effective_user.id
 
     # Enviamos un indicador de que el bot esta escribiendo, mientras gemini piensa
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
@@ -59,14 +94,19 @@ async def procesar_gasto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "mensaje del usuario y devolverlos exactamente en este formato de texto plano separado por barras"
         "sin introducciones, sin saludos y sin formato markdown:\n"
         "SÉ ESTRICTO. NO agregues introducciones, NO expliques tu razonamiento, NO agregues etiquetas como 'THOUGHT:'.\n"
-        "concepto | monto | categoria | tipo\n\n"
+        "concepto | monto | categoria | tipo | moneda\n\n"
         "Reglas:\n"
-        "1. monto: Debe ser solo el numero entero, sin signos de pesos ni letras\n"
+        "1. monto: Debe ser solo el numero entero o decimal, sin signos de pesos ni letras\n"
         "2. categoria: Clasifica el movimiento en una de estas categorias: Comida, Transporte, Servicios, "
         "Entretenimiento, Salud, Sueldo, Otros\n"
-        "3. tipo: Debe ser estrictamente la palabra 'gasto' o 'ingreso'.\n\n"
+        "3. tipo: Debe ser estrictamente la palabra 'gasto' o 'ingreso'.\n"
+        "4. moneda: Debe ser el código ISO de 3 letras en mayúsculas (ej: ARS, USD, EUR, BRL). "
+        "Si el usuario no especifica explícitamente la moneda (ej: 'Gasté 3500 en un café'), asumí 'ARS'. "
+        "Si dice dólares usa 'USD', si dice euros usa 'EUR'.\n\n"
         "Ejemplo si el usuario dice: 'Ayer gaste 2500 pesos en cargar la sube'\n"
-        "Carga Sube | 2500 | Transporte | gasto"
+        "Carga Sube | 2500 | Transporte | gasto | ARS\n"
+        "Ejemplo si el usuario dice: 'Pagué 15 dólares de Netflix'\n"
+        "Netflix | 15 | Entretenimiento | gasto | USD"
     )
 
     try:
@@ -89,10 +129,10 @@ async def procesar_gasto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Separamos el texto usando barras
         parts = [p.strip() for p in ia_result.split("|")]
-        if len(parts) < 4:
-            raise ValueError(" La IA no contiene las 4 partes: {ia_result}")
+        if len(parts) < 5:
+            raise ValueError(" La IA no contiene las 5 partes: {ia_result}")
         
-        concepto, monto_str, categoria, tipo = parts[:4]
+        concepto, monto_str, categoria, tipo, moneda = parts[:5]
 
         # Limpiamos el monto
         monto_str = "".join(c for c in monto_str if c.isdigit() or c == '.')
@@ -100,20 +140,24 @@ async def procesar_gasto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Insertamos los datos en supabase usando SQL Alchemy
         query= text("""
-            INSERT INTO movimientos (user_id, concepto, categoria, monto, tipo, created_at)
-            VALUES (:user_id, :concepto, :categoria, :monto, :tipo, :created_at)
+            INSERT INTO movimientos (chat_id, concepto, categoria, monto, tipo, moneda, created_at)
+            VALUES (:chat_id, :concepto, :categoria, :monto, :tipo, :moneda, :created_at)
         """)
 
         with engine.connect() as connection:
             connection.execute(query, {
-                "user_id": user_id,
+                "chat_id": int(user_id),
                 "concepto": concepto,
                 "categoria": categoria,
                 "monto": monto,
                 "tipo": tipo,
+                "moneda": moneda,
                 "created_at": datetime.now(timezone.utc)
             })
             connection.commit() # Confiramos que se guarde en la base de datos
+
+        # integracion de la alerta del presupuesto
+        alerta_mensaje = await verificar_alerta_presupuesto(int(user_id), categoria)
 
         # Respondemos con exito al usuario en Telegram
         icono = "🔻" if tipo.lower() == "gasto" else "🔹"
@@ -121,9 +165,14 @@ async def procesar_gasto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"✅ *¡Movimiento anotado!*\n\n"
             f"{icono} *Tipo:* {tipo.capitalize()}\n"
             f"📝 *Concepto:* {concepto}\n"
-            f"💰 *Monto:* ${monto:,.2f}\n"
+            f"💰 *Monto:* {moneda} ${monto:,.2f}\n" # muestra ars, usd, etc.
             f"🗂️ *Categoría:* {categoria}"
         )
+
+        # si la funcion encontro un presupuesto hay aviso, y se lo sumamos abajo
+        if alerta_mensaje:
+            mensaje_ok += f"\n\n====================\n{alerta_mensaje}"
+        
         await update.message.reply_text(mensaje_ok, parse_mode="Markdown")
     
     except Exception as e:
@@ -132,6 +181,97 @@ async def procesar_gasto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "😅 Che, no entendí bien el movimiento o hubo un problema al guardarlo."
             "¿Me lo podrás repetir de otra forma? Ej: 'Gasto 3000 en verdulería'"
         )
+
+async def verificar_alerta_presupuesto(chat_id: int, categoria_gasto: str):
+    """Compara el total gastado en el mes contra el límite configurado por el usuario."""
+
+    # Query para traer el limite a CIERTA categoria
+    query_limite = text("""
+        SELECT limite_mensual FROM presupuesto
+        WHERE chat_id = :chat_id AND categoria = :categoria
+    """)
+
+    #query para sumar todos los gastos de la categoria en el mes actual
+    query_suma_mes = text("""
+        SELECT COALESCE (SUM(monto), 0) FROM movimientos
+        WHERE chat_id = :chat_id
+        AND categoria = :categoria
+        AND tipo = 'gasto'
+        AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM NOW())
+        AND EXTRACT(YEAR FROM created_at) = EXTRACT(YEAR FROM NOW())
+    """)
+
+    try:
+        with engine.connect() as connection:
+            # buscamos si tiene limite seteado por el usuario
+            limite_res = connection.execute(query_limite, {"chat_id": chat_id, "categoria": categoria_gasto}).fetchone()
+            if not limite_res:
+                return None # No tiene presupuesto configurado
+            
+            limite = float(limite_res[0])
+
+            # calculamos cuanto viene gastado en el mes
+            total_gastado = float(connection.execute(query_suma_mes, {"chat_id": chat_id, "categoria": categoria_gasto}).scalar())
+
+            # si se paso o esta carca , armamos un mensaje aviso
+            if total_gastado > limite:
+                exceso = total_gastado - limite
+                return f"🚨 *¡ALERTA DE PRESUPUESTO!*\n\nTe pasaste del límite mensual de *{categoria_gasto}* por *${exceso:,.2f}*.\n📉 Limite: ${limite:,.2f} | Gastado: ${total_gastado:,.2f}"
+            elif total_gastado >= (limite * 0.85): #alertamos previo al 85% del uso
+                disponible = limite - total_gastado
+                return f"⚠️ *Cuidado! Presupuesto ajustado*\n\nYa consumiste mas del 85% de *{categoria_gasto}*.\nTe quedan solo *${disponible:,.2f}* para el resto del mes."
+            
+    except Exception as e:
+        logging.error(f"❌ Error al verificar presupuesto: {e}", exc_info=True)
+    
+    return None
+
+async def reportes_comando(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Permite al usuario desactivar o desactivar los reportes semanales automaticos."""
+    user_id = update.effective_user.id
+
+    #query para ver el estado actual del usuario
+    query_buscar = text("SELECT suscrito_reportes FROM usuarios WHERE chat_id = :chat_id")
+
+    #query para alternar
+    query_update = text("""
+        UPDATE usuarios
+        SET suscrito_reportes = NOT suscrito_reportes
+        WHERE chat_id = :chat_id
+        RETURNING suscrito_reportes
+    """)
+
+    try:
+        with engine.connect() as connection:
+            # primero chequeamos si el usuario existe
+            user_exists = connection.execute(query_buscar, {"chat_id": int(user_id)}).fetchone()
+
+            if not user_exists:
+                await update.message.reply_text("❌ primero tenes que iniciar el bot /start")
+                return
+            
+            # ejecutamos el cambio y guardamos el estado
+            result = connection.execute(query_update, {"chat_id": int(user_id)})
+            nuevo_estado = result.scalar()
+            connection.commit()
+
+        # respondemos segun el estado de la base de datos
+        if nuevo_estado:
+            mensaje = (
+                "🔔 *Reportes activados!*\n\n"
+                "A partir de ahora vas a recibir tus resumenes financieros automaticamente. 📊"
+            )
+        else:
+            mensaje = (
+                "🔕 *Reportes desactivos!*\n\n"
+                "Ya no te enviaremos resumenes semanales automaticos. Podes volver a activarlo cuando uses este mismo comando"
+            )
+
+        await update.message.reply_text(mensaje, parse_mode="Markdown")
+
+    except Exception as e:
+        logging.error(f"❌ Error en comando /reportes: {e}", exc_info=True)
+        await update.message.reply_text("⚠️ Hubo un problema al intentar cambiar tu suscripcion a los reportes")
 
 # Comando /balance para el analisis de datos
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -247,13 +387,13 @@ async def deshacer_comando(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     # nos aseguramos d el id del usuario
-    parametros_usuario = [{"user_id": int(user_id)}]
+    parametros_usuario = [{"chat_id": int(user_id)}]
 
     # 1 query para buscar el ultimo movimiento de este usuario especifico
     query_buscar = text("""
         SELECT id, concepto, monto, tipo
         FROM movimientos
-        WHERE user_id = :user_id
+        WHERE chat_id = :chat_id
         ORDER BY created_at DESC
         LIMIT 1
     """)
@@ -353,6 +493,7 @@ async def main():
     # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("balance", balance)) # handler del balance
+    app.add_handler(CommandHandler("reportes", reportes_comando)) # handler de reportes
     app.add_handler(CommandHandler("categorias", categorias)) # handler de categorias
     app.add_handler(CommandHandler("deshacer", deshacer_comando)) # handler de deshacer
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_gasto))
