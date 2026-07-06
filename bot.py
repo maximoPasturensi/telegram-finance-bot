@@ -498,6 +498,10 @@ async def enviar_resumen_automatico(bot, chat_id, tipo_reporte="semanal"):
 
 # funcion principal que arrancamos el bot
 async def main():
+    #lineas de prueba
+    logging.info(f"🔍 Probando Token en Render: '{TELEGRAM_TOKEN[:10]}...'")
+    logging.info(f"🔍 Probando URL DB en Render: '{DATABASE_URL[:15]}...'")
+    
     if not all([TELEGRAM_TOKEN, DATABASE_URL, GEMINI_API_KEY]):
         logging.error("❌ Error: Faltan variables de entorno en el archivo .env")
         return
