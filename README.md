@@ -251,8 +251,45 @@ python bot.py
 - [x] **Tests automatizados:** cobertura con `pytest` para el parser de Gemini y las queries SQL (actualmente solo existe `test_db.py` como *smoke test* manual).
 - [x] **CI/CD:** pipeline de despliegue continuo (GitHub Actions) hacia un entorno productivo (Railway / Render / Fly.io).
 - [x] **Logging estructurado:** reemplazar los `print()` por `logging` con niveles y rotación de archivos.
-- [ ] **Migraciones versionadas:** introducir Alembic para el control de esquema de la tabla `movimientos`.
+- [x] **Migraciones versionadas:** introducir Alembic para el control de esquema de la tabla `movimientos`.
 
 ---
+
+## 🗺️ Roadmap Senior / Próxima fase
+
+### ⚙️ Arquitectura y Concurrencia
+- [ ] **Migrar de threading a FastAPI/ASGI:** reemplazar el thread paralelo de healthcheck por un servidor ASGI real corriendo en el mismo proceso, con endpoint `/health` nativo.
+- [ ] **Webhooks en vez de polling:** migrar `python-telegram-bot` de modo polling a webhook, reduciendo latencia y costo de cómputo en Render.
+- [ ] **Desacoplar el scheduler del bot:** correr APScheduler (o migrar a un worker con colas) en un servicio separado, para que un caído no tumbe al otro.
+
+### 🗄️ Base de Datos
+- [ ] **Connection pooling explícito:** configurar `pool_size`, `max_overflow` y `pool_pre_ping=True` en el `engine` para evitar conexiones muertas por timeout de Supabase.
+- [ ] **Índice compuesto `(user_id, created_at)`:** optimizar las queries de `/balance` y `/categorias`, que filtran por ambas columnas simultáneamente.
+- [ ] **Migrar a `Session` de SQLAlchemy:** reemplazar `engine.connect()` crudo por manejo de sesiones con rollback transaccional automático.
+- [ ] **Particionamiento por fecha:** evaluar particionar `movimientos` por mes a medida que crece el volumen de filas.
+
+### 🧩 Patrones de Diseño
+- [ ] **Repository Pattern:** extraer toda la lógica SQL a una capa `repositories/`, desacoplada de los handlers de Telegram.
+- [ ] **Strategy Pattern para el proveedor de IA:** encapsular la llamada a Gemini detrás de una interfaz común, para poder intercambiar modelos sin tocar los handlers.
+- [ ] **Cola de mensajes (Redis + worker):** desacoplar la recepción del mensaje del procesamiento con IA/DB, evitando bloqueos ante picos de tráfico.
+
+### 🛡️ Resiliencia
+- [ ] **Retries con backoff exponencial** (`tenacity`) en las llamadas a Gemini y a la base de datos.
+- [ ] **Circuit breaker para Gemini:** cortar llamadas ante fallos repetidos en vez de reintentar en loop.
+- [ ] **Idempotencia en reportes automáticos:** registrar envíos ya realizados para evitar duplicados ante reinicios del proceso.
+
+### 📊 Observabilidad
+- [ ] **Métricas estructuradas:** volumen de mensajes/hora, tasa de error de parseo de Gemini, latencia p95 de la IA.
+- [ ] **Logging con correlación:** incluir `user_id` y `request_id` en cada log del ciclo de vida de un mensaje.
+- [ ] **Alertas sobre el propio sistema:** notificación proactiva si la tasa de error de Gemini supera un umbral.
+
+### 🔐 Seguridad
+- [ ] **Rate limiting por usuario:** prevenir abuso de cuota de Gemini o saturación de la DB.
+- [ ] **Validación estricta del esquema de salida de la IA:** `Enum` para `categoria` y `tipo`, evitando datos sucios en la tabla.
+- [ ] **Rotación periódica de secrets:** confirmar uso de variables de entorno nativas de Render y establecer rotación de la API key de Gemini.
+
+### 🧪 Testing
+- [ ] **Tests de contrato para el parser de Gemini:** casos borde (montos con texto, mezcla de idiomas) con la API mockeada.
+- [ ] **Tests de integración con DB efímera:** validar migraciones de Alembic y queries reales vía `testcontainers` o SQLite en memoria.
 
 <p align="center"><sub>Construido con 🧉 usando Python, Gemini API, Supabase y Power BI.</sub></p>
