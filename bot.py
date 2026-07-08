@@ -11,9 +11,11 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from google import genai
 from google.genai import types
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from pydantic import BaseModel, Field
 from fastapi import FastAPI
+from tasks import enviar_resumen_automatico
+from database import engine
 import uvicorn
 
 fastapi_app = FastAPI(title="FinanzAsist API")
@@ -50,8 +52,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Iniciamos SQLAlchemy y el cliente del gemiini
-engine = create_engine(DATABASE_URL)
+# Iniciamos el cliente del gemiini
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 # Comando /start
@@ -441,55 +442,6 @@ async def deshacer_comando(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logging.error(f"Error en comando /deshacer: {e}", exc_info=True)
         await update.message.reply_text("⚠️ Ocurrió un error al intentar borrar el último registro.")
-
-#Funcion para envias resumenes automaticos
-async def enviar_resumen_automatico(bot, chat_id, tipo_reporte="semanal"):
-    #definimos los filtros segun el tipo de reporte en sql
-    if tipo_reporte == "semanal":
-        #filtro 7 dias
-        sql_filter = "created_at >= NOW() - INTERVAL '7 days'"
-        titulo = "🗓️ *REPORTE ANALÍTICO SEMANAL*"
-    else:
-        #filtro primer dia del mes
-        sql_filter = "created_at >= DATE_TRUNC('month', NOW())"
-        titulo = "🗓️ *REPORTE ANALÍTICO MENSUAL*"
-
-    query = text(f"""
-        SELECT tipo, SUM(monto) as total
-        FROM movimientos
-        WHERE user_id = :user_id AND {sql_filter}
-        GROUP BY tipo
-    """)
-
-    try:
-        with engine.connect() as connection:
-            result = connection.execute(query, dict(user_id=int(chat_id))).fetchall()
-
-        totales = {"ingreso": 0.0, "gasto": 0.0}
-        for fila in result:
-            totales[fila[0].lower()] = float(fila[1])
-
-        ingresos = totales["ingreso"]
-        gastos = totales["gasto"]
-        neto = ingresos - gastos
-        emoji_balance = "💰" if neto >= 0 else "⚠️"
-
-        reporte = (
-            f"{titulo}\n"
-            f"--- Automatic Summary ---\n\n"
-            f"🔹 *Ingresos en el período:* ${ingresos:,.2f}\n"
-            f"🔻 *Gastos en el período:* ${gastos:,.2f}\n"
-            f"---"
-            f"{emoji_balance} *Balance del período:* ${neto:,.2f}\n\n"
-            f"_Este es un reporte automático generado por tu Pipeline de datos._"
-        )
-
-        #Enviamos el mensaje de forma PROACTIVA (osea sin que el usuario lo pida)
-        await bot.send_message(chat_id=chat_id, text=reporte, parse_mode="Markdown")
-        logging.info(f"🚀 Reporte automático ({tipo_reporte}) enviado con éxito al ID {chat_id}")
-    
-    except Exception as e:
-        logging.error(f"❌ Error al enviar reporte automático {tipo_reporte}: {e}", exc_info=True)
 
 # funcion principal que arrancamos el bot
 async def main():

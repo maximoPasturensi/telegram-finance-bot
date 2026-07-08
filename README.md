@@ -258,7 +258,7 @@ python bot.py
 ## 🗺️ Roadmap Senior / Próxima fase
 
 ### ⚙️ Arquitectura y Concurrencia
-- [ ] **Migrar de threading a FastAPI/ASGI:** reemplazar el thread paralelo de healthcheck por un servidor ASGI real corriendo en el mismo proceso, con endpoint `/health` nativo.
+- [x] **Migrar de threading a FastAPI/ASGI:** reemplazar el thread paralelo de healthcheck por un servidor ASGI real corriendo en el mismo proceso, con endpoint `/health` nativo.
 - [ ] **Webhooks en vez de polling:** migrar `python-telegram-bot` de modo polling a webhook, reduciendo latencia y costo de cómputo en Render.
 - [ ] **Desacoplar el scheduler del bot:** correr APScheduler (o migrar a un worker con colas) en un servicio separado, para que un caído no tumbe al otro.
 
