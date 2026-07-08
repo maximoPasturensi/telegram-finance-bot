@@ -13,25 +13,15 @@ from google import genai
 from google.genai import types
 from sqlalchemy import create_engine, text
 from pydantic import BaseModel, Field
+from fastapi import FastAPI
+import uvicorn
 
-# funcion para "levantar un servidor basico"
-def run_dummy_server():
-    # render nos da el entorno PORT
-    port = int(os.environ.get("PORT", 8080))
+fastapi_app = FastAPI(title="FinanzAsist API")
 
-    # creamos un handler para que el server use mi logging y no ensucie la pantalla
-    class LoggedHandler(SimpleHTTPRequestHandler):
-        def log_message(self, format, *args):
-            logging.info(f"[Render HTTP Ping] {format % args}")
-
-    try:
-        with TCPServer(("", port), LoggedHandler) as httpd:
-            httpd.timeout = 5
-            logging.info(f"Servidor de escape para render escuchando en el puerto {port}...")
-            httpd.serve_forever()
-
-    except Exception as e:
-        logging.error(f"❌ Error en el servidor web ficticio: {e}")
+@fastapi_app.get("/health")
+def health_check():
+    """Endpoint nativo para que Render sepa que el bot sigue vivo"""
+    return {"status": "ok", "bot_active": True}
 
 class GastoEstructurado(BaseModel):
     monto: float
@@ -510,12 +500,6 @@ async def main():
     if not all([TELEGRAM_TOKEN, DATABASE_URL, GEMINI_API_KEY]):
         logging.error("❌ Error: Faltan variables de entorno en el archivo .env")
         return
-    
-    # lanzamos el servidor web
-    logging.info("⏳ Iniciando servidor web en segundo plano...")
-    logging.info("🚀 Arrancando el bot de finanzas ... Presiona Ctrl+C para detenerlo")
-    server_thread = threading.Thread(target=run_dummy_server, daemon=True)
-    server_thread.start()
 
     # Contruimos la aplicacion de telegram
     app = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -553,22 +537,38 @@ async def main():
         minute=0,
         args=[app.bot, Mi_chat_id, "mensual"]
     )
+    # Servidor ASGI (fastAPI) + configuracion del bot
+    # configuramos uvicorn para que maneje la app de fastapi
+    config = uvicorn.Config(
+        fastapi_app,
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8080)),
+        loop="asyncio"
+    )
+    server = uvicorn.Server(config)
 
-    #El reloj de fondo
+    # creamos una tarea en segundo plano para el server
+    asyncio.create_task(server.serve())
+
+    # arrancamos el planificador automatico de reportes
     scheduler.start()
 
-    # levantamos el servidor falso
-    threading.Thread(target=run_dummy_server, daemon=True).start()
-
-     # Empezamos el motodo de polling (escucha de mensajes)
+    # iniciamos el bot de telegram de forma asincronica
     await app.initialize()
-    await app.updater.start_polling()
     await app.start()
+    await app.updater.start_polling()
 
-    # Aca mantenemos el bot corriendo
-    import asyncio
-    while True:
-        await asyncio.sleep(3600)
+    logging.info("🚀 Servidor FastAPI (puerto 8080) y Bot de Telegram iniciados correctamente.")
+
+    #mantenemos el proceso vivo mientras la fast api no se detenga
+    while not server.should_exit:
+        await asyncio.sleep(1)
+
+    # si sale del bucle, frenamos limpio
+    await app.updater.stop()
+    await app.stop()
+    await app.shutdown()
+
 
 if __name__ == "__main__":
     import asyncio
