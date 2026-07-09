@@ -137,7 +137,7 @@ async def procesar_gasto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # Llamamos a la API de Gemini (Usando google-genai)
         response = ai_client.models.generate_content(
-            model ='gemini-2.5-flash',
+            model ='gemini-2.0-flash',
             contents=user_text,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
@@ -159,7 +159,7 @@ async def procesar_gasto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(parts) < 5:
             raise ValueError(f"La IA no contiene las 5 partes requeridas. Devolvió: {ia_result}")
         
-        concepto , monto_str, categorias, tipo, moneda = parts[:5]
+        concepto , monto_str, categoria, tipo, moneda = parts[:5]
  
         # Limpiamos el monto
         monto_str = "".join(c for c in monto_str if c.isdigit() or c == '.')
