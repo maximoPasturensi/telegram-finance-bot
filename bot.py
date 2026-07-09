@@ -149,16 +149,18 @@ async def procesar_gasto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not ia_result:
             raise ValueError("Gemini devolvio una respuesta vacia")
         
-        ia_result = ia_result.strip()  # Limpiamos espacios al inicio y final
-        logging.info(f"🤖IA decodifico: {ia_result}") # Vemos en la consola que proceso
+        #limpiamos espacios y posibles nloques de codigo markdown
+        ia_result = ia_result.strip().replace("```", "").replace("text", "")
+        logging.info(f"🤖 IA decodifico: {ia_result}")
 
-        # Separamos el texto usando barras
-        parts = [p.strip() for p in ia_result.split("|")]
+        # separamos el texto usando barras
+        parts = [p.strip() for p in ia_result.split("|") if p.strip()] # evitamos partes vacias
+
         if len(parts) < 5:
-            raise ValueError(" La IA no contiene las 5 partes: {ia_result}")
+            raise ValueError(f"La IA no contiene las 5 partes requeridas. Devolvió: {ia_result}")
         
-        concepto, monto_str, categoria, tipo, moneda = parts[:5]
-
+        concepto , monto_str, categorias, tipo, moneda = parts[:5]
+ 
         # Limpiamos el monto
         monto_str = "".join(c for c in monto_str if c.isdigit() or c == '.')
         monto = float(monto_str)
