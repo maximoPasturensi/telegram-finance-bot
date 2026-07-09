@@ -110,6 +110,15 @@ async def procesar_gasto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     user_id = update.effective_user.id
 
+    # control de colas, ignorar mensajes acumulados viejos
+    from datetime import datetime, timezone
+    mensaje_tiempo = update.message.date 
+    ahora_tiempo = datetime.now(timezone.utc)
+
+    if (ahora_tiempo - mensaje_tiempo).total_seconds() > 15:
+        logging.info(f"⏳ Mensaje antiguo ignorado para cuidar cuota de Gemini: '{user_text}'")
+        return
+
     # Enviamos un indicador de que el bot esta escribiendo, mientras gemini piensa
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
 
