@@ -47,7 +47,7 @@ async def telegram_webhook(request: Request):
         return Response(status_code=status.HTTP_200_OK)
     except Exception as e:
         logging.error(f"❌ Error procesando el webhook de Telegram: {e}", exc_info=True)
-        return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(status_code=status.HTTP_200_OK)
     
 class GastoEstructurado(BaseModel):
     monto: float
