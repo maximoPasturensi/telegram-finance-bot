@@ -13,47 +13,59 @@ from google import genai
 from google.genai import types
 from sqlalchemy import text
 from pydantic import BaseModel, Field
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response, status
 from tasks import enviar_resumen_automatico
 from database import engine
 import uvicorn
 
+load_dotenv()
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL", "https://telegram-finance-bot-1-6bbq.onrender.com")
+DATABASE_URL = os.getenv("DATABASE_URL")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
 fastapi_app = FastAPI(title="FinanzAsist API")
 
+app = Application.builder().token(TELEGRAM_TOKEN).build()
+
+ai_client = genai.Client(api_key=GEMINI_API_KEY)
+
+# Endpoints de fast api
 @fastapi_app.get("/health")
 def health_check():
     """Endpoint nativo para que Render sepa que el bot sigue vivo"""
     return {"status": "ok", "bot_active": True}
 
+@fastapi_app.post("/webhook")
+async def telegram_webhook(request: Request):
+    """Recibe las actualizaciones de Telegram en tiempo real y las procesa."""
+    try:
+        json_data = await request.json()
+        update = Update.de_json(json_data, app.bot)
+        await app.process_update(update)
+        return Response(status_code=status.HTTP_200_OK)
+    except Exception as e:
+        logging.error(f"❌ Error procesando el webhook de Telegram: {e}", exc_info=True)
+        return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
 class GastoEstructurado(BaseModel):
     monto: float
     concepto: str
     categoria: str
     tipo: str = Field(description="'gasto' o 'ingreso'")
-    moneda: str = Field(description="Codigo ISO 4217 (ej: ARS, USD, EUR). Por defecto ARS.")
+    moneda: str = Field(description="Codigo ISO 4217 (ej: ARS, USD, EUR). Por defecto ARS")
 
-# configuracion de logging 
+# configuracion de logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(asctime)s [%(levelname)s] $(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
         logging.FileHandler("bot.log", encoding="utf-8"), # guardamos todo en este archivo
-        logging.StreamHandler() #lo muestra en consola
+        logging.StreamHandler() # mostramos en consola
     ]
 )
-# cargamos las variables
-load_dotenv()
-
-# Vamos a cargar las variables del entorno
-load_dotenv()
-
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-DATABASE_URL = os.getenv("DATABASE_URL")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-# Iniciamos el cliente del gemiini
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 # Comando /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -453,9 +465,6 @@ async def main():
         logging.error("❌ Error: Faltan variables de entorno en el archivo .env")
         return
 
-    # Contruimos la aplicacion de telegram
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
-
     # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("balance", balance)) # handler del balance
@@ -470,25 +479,9 @@ async def main():
     # remplazamos aca el id de telegram
     Mi_chat_id = 6167650305
 
-    # Este es el programador semanal
-    scheduler.add_job(
-        enviar_resumen_automatico,
-        'cron',
-        day_of_week='sun',
-        hour=21,
-        minute=0,
-        args=[app.bot, Mi_chat_id, "semanal"]
-    )
+    scheduler.add_job(enviar_resumen_automatico, 'cron', day_of_week='sun', hour=21, minute=0, args=[app.bot, Mi_chat_id, "semanal"])
+    scheduler.add_job(enviar_resumen_automatico, 'cron', day=1, hour=9, minute=0, args=[app.bot, Mi_chat_id, "mensual"])
 
-    # el programador mensual
-    scheduler.add_job(
-        enviar_resumen_automatico,
-        'cron',
-        day=1,
-        hour=9,
-        minute=0,
-        args=[app.bot, Mi_chat_id, "mensual"]
-    )
     # Servidor ASGI (fastAPI) + configuracion del bot
     # configuramos uvicorn para que maneje la app de fastapi
     config = uvicorn.Config(
@@ -508,16 +501,18 @@ async def main():
     # iniciamos el bot de telegram de forma asincronica
     await app.initialize()
     await app.start()
-    await app.updater.start_polling()
 
-    logging.info("🚀 Servidor FastAPI (puerto 8080) y Bot de Telegram iniciados correctamente.")
+    weebhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
+    await app.bot.set_webhook(url=weebhook_url)
+
+    logging.info("🕸️ Webhook configurado con éxito en: {webhook_url}")
 
     #mantenemos el proceso vivo mientras la fast api no se detenga
     while not server.should_exit:
         await asyncio.sleep(1)
 
-    # si sale del bucle, frenamos limpio
-    await app.updater.stop()
+    # cierre limpio 
+    await app.bot.delete_webhook()
     await app.stop()
     await app.shutdown()
 
